@@ -318,6 +318,23 @@
     padding-top:8px;
     border-top:1px dashed var(--border);
   }
+  .ex-notes{margin-top:8px;}
+  .ex-notes-label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;display:block;}
+  .ex-notes textarea{
+    width:100%;
+    min-height:40px;
+    max-height:120px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface-2);
+    color:var(--text);
+    font-family:"IBM Plex Sans",sans-serif;
+    font-size:16px;
+    line-height:1.4;
+    padding:8px 10px;
+    resize:vertical;
+  }
+  .ex-notes textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .ex-sets{
     margin-top:10px;
     display:flex;
@@ -326,10 +343,23 @@
   }
   .set-row{
     display:grid;
-    grid-template-columns:34px 1fr 16px 1fr;
+    grid-template-columns:34px 1fr 16px 1fr 38px;
     align-items:center;
     gap:8px;
   }
+  .fail-btn{
+    min-height:42px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface-2);
+    color:var(--text-muted);
+    font-family:"IBM Plex Mono",monospace;
+    font-weight:600;
+    font-size:12px;
+    cursor:pointer;
+    padding:0;
+  }
+  .fail-btn.active{background:var(--danger);border-color:var(--danger);color:#fff;}
   .set-num{
     font-family:"IBM Plex Mono",monospace;
     font-size:12px;
@@ -359,7 +389,7 @@
   .set-x{text-align:center;color:var(--text-muted);font-size:13px;}
   .unit-row{
     display:grid;
-    grid-template-columns:34px 1fr 16px 1fr;
+    grid-template-columns:34px 1fr 16px 1fr 38px;
     gap:8px;
     font-size:9.5px;
     text-transform:uppercase;
@@ -369,6 +399,7 @@
   }
   .unit-row span:first-child{visibility:hidden;}
   .unit-row span:nth-child(3){visibility:hidden;}
+  .unit-row span:last-child{text-align:center;}
   .add-set-btn{
     margin-top:4px;
     align-self:flex-start;
@@ -709,7 +740,7 @@
   function fmtSetsText(sets){
     var parts = [];
     (sets||[]).forEach(function(s){
-      if (s && s.weight != null && s.reps != null) parts.push(s.weight + "×" + s.reps);
+      if (s && s.weight != null && s.reps != null) parts.push(s.weight + "×" + s.reps + (s.failure ? "F" : ""));
     });
     return parts.length ? parts.join(", ") : "No previous log yet";
   }
@@ -925,9 +956,19 @@
         last.textContent = "Last time: " + (prev ? fmtSetsText(prev.sets) : "—");
         card.appendChild(last);
 
+        var notesWrap = document.createElement("div");
+        notesWrap.className = "ex-notes";
+        notesWrap.innerHTML = '<span class="ex-notes-label">Notes</span>';
+        var notesArea = document.createElement("textarea");
+        notesArea.placeholder = "Form cues, equipment setting, how it felt…";
+        notesArea.value = ex.notes || "";
+        notesArea.addEventListener("change", function(){ ex.notes = notesArea.value; saveState(); });
+        notesWrap.appendChild(notesArea);
+        card.appendChild(notesWrap);
+
         var unitRow = document.createElement("div");
         unitRow.className = "unit-row";
-        unitRow.innerHTML = "<span>set</span><span>kg</span><span>×</span><span>reps</span>";
+        unitRow.innerHTML = "<span>set</span><span>kg</span><span>×</span><span>reps</span><span>fail</span>";
         card.appendChild(unitRow);
 
         var setsWrap = document.createElement("div");
@@ -983,10 +1024,24 @@
     rInput.autocomplete = "off";
     if (existingSet && existingSet.reps != null){ rInput.value = existingSet.reps; rInput.classList.add("filled"); }
 
+    var failBtn = document.createElement("button");
+    failBtn.type = "button";
+    failBtn.className = "fail-btn" + (existingSet && existingSet.failure ? " active" : "");
+    failBtn.textContent = "F";
+    failBtn.id = "f-" + ex.id + "-" + i;
+    failBtn.title = "Mark this set as taken to failure";
+    failBtn.setAttribute("aria-pressed", existingSet && existingSet.failure ? "true" : "false");
+    failBtn.addEventListener("click", function(){
+      var isActive = failBtn.classList.toggle("active");
+      failBtn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      saveLog(ex);
+    });
+
     row.appendChild(num);
     row.appendChild(wInput);
     row.appendChild(xSep);
     row.appendChild(rInput);
+    row.appendChild(failBtn);
 
     [wInput, rInput].forEach(function(inputEl){
       inputEl.addEventListener("input", function(){
@@ -1010,9 +1065,14 @@
     for (var i=0;i<ex.sets;i++){
       var w = document.getElementById("w-"+ex.id+"-"+i);
       var r = document.getElementById("r-"+ex.id+"-"+i);
+      var f = document.getElementById("f-"+ex.id+"-"+i);
       var wv = w && w.value.trim() !== "" ? parseFloat(w.value) : null;
       var rv = r && r.value.trim() !== "" ? parseInt(r.value, 10) : null;
-      sets.push({ weight: (wv!=null && !isNaN(wv)) ? wv : null, reps: (rv!=null && !isNaN(rv)) ? rv : null });
+      sets.push({
+        weight: (wv!=null && !isNaN(wv)) ? wv : null,
+        reps: (rv!=null && !isNaN(rv)) ? rv : null,
+        failure: !!(f && f.classList.contains("active"))
+      });
     }
     state.logs[logKey(ex.id)] = {
       date: selectedDate,
