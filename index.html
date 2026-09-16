@@ -310,14 +310,29 @@
     padding-top:2px;
   }
   .ex-save.show{opacity:1;}
-  .ex-last{
-    font-family:"IBM Plex Mono",monospace;
-    font-size:11.5px;
-    color:var(--text-muted);
+  .pr-badge{
+    display:none;
+    margin-left:8px;
+    font-size:11px;
+    font-weight:700;
+    color:var(--pr);
+    vertical-align:middle;
+  }
+  .ex-last-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
     margin-top:8px;
     padding-top:8px;
     border-top:1px dashed var(--border);
   }
+  .ex-last{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11.5px;
+    color:var(--text-muted);
+  }
+  .ex-last-actions{display:flex;gap:6px;flex:0 0 auto;}
   .ex-notes{margin-top:8px;}
   .ex-notes-label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;display:block;}
   .ex-notes textarea{
@@ -507,7 +522,13 @@
   .cal-day.selected .cal-dot{background:var(--surface);}
   .date-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:8px;}
   .date-row .today{padding-top:0;}
-
+  .chart-modal{max-width:380px;}
+  .chart-svg{width:100%;height:auto;display:block;}
+  .chart-line{fill:none;stroke:var(--accent);stroke-width:2;}
+  .chart-dot{fill:var(--accent);}
+  .chart-axis{stroke:var(--border);stroke-width:1;}
+  .chart-label{font-family:"IBM Plex Mono",monospace;font-size:9px;fill:var(--text-muted);}
+  .chart-empty{font-size:13px;color:var(--text-muted);line-height:1.5;padding:12px 0;}
 </style>
 </head>
 <body>
@@ -566,6 +587,16 @@
     <div class="cal-grid" id="calGrid"></div>
     <div class="modal-actions" style="margin-top:14px;">
       <button class="btn-line" id="calClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="chartBackdrop">
+  <div class="modal chart-modal">
+    <h3 id="chartTitle">Progress</h3>
+    <div id="chartBody"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn-line" id="chartClose">Close</button>
     </div>
   </div>
 </div>
@@ -945,16 +976,39 @@
       } else {
         head.innerHTML =
           '<div><div class="ex-name">'+escapeHtml(ex.name)+'</div>'+
-          '<div class="ex-target">Target '+ex.sets+'×'+escapeHtml(ex.reps)+'</div></div>'+
+          '<div class="ex-target">Target '+ex.sets+'×'+escapeHtml(ex.reps)+
+          '<span class="pr-badge" id="pr-'+ex.id+'">🏆 PR</span></div></div>'+
           '<div class="ex-save" id="save-'+ex.id+'">Saved</div>';
         card.appendChild(head);
 
+        var prev = lastLogBefore(ex.id);
+
+        var lastRow = document.createElement("div");
+        lastRow.className = "ex-last-row";
         var last = document.createElement("div");
         last.className = "ex-last";
         last.id = "last-" + ex.id;
-        var prev = lastLogBefore(ex.id);
         last.textContent = "Last time: " + (prev ? fmtSetsText(prev.sets) : "—");
-        card.appendChild(last);
+        lastRow.appendChild(last);
+
+        var lastActions = document.createElement("div");
+        lastActions.className = "ex-last-actions";
+        if (prev){
+          var repeatBtn = document.createElement("button");
+          repeatBtn.className = "mini-btn";
+          repeatBtn.title = "Repeat last time's numbers";
+          repeatBtn.textContent = "↺";
+          repeatBtn.addEventListener("click", function(){ repeatLastTime(ex, prev); });
+          lastActions.appendChild(repeatBtn);
+        }
+        var chartBtn = document.createElement("button");
+        chartBtn.className = "mini-btn";
+        chartBtn.title = "Progress chart";
+        chartBtn.textContent = "📈";
+        chartBtn.addEventListener("click", function(){ openChart(ex); });
+        lastActions.appendChild(chartBtn);
+        lastRow.appendChild(lastActions);
+        card.appendChild(lastRow);
 
         var notesWrap = document.createElement("div");
         notesWrap.className = "ex-notes";
@@ -987,6 +1041,7 @@
       }
 
       listEl.appendChild(card);
+      if (!editMode) updatePrBadge(ex);
     });
 
     if (editMode){
@@ -1035,6 +1090,7 @@
       var isActive = failBtn.classList.toggle("active");
       failBtn.setAttribute("aria-pressed", isActive ? "true" : "false");
       saveLog(ex);
+      updatePrBadge(ex);
     });
 
     row.appendChild(num);
@@ -1048,9 +1104,126 @@
         inputEl.classList.toggle("filled", inputEl.value.trim() !== "");
         saveLog(ex);
         updateSummary();
+        updatePrBadge(ex);
       });
     });
     return row;
+  }
+
+  function repeatLastTime(ex, prevEntry){
+    var sets = prevEntry.sets || [];
+    for (var i=0;i<ex.sets;i++){
+      var s = sets[i];
+      var w = document.getElementById("w-"+ex.id+"-"+i);
+      var r = document.getElementById("r-"+ex.id+"-"+i);
+      var f = document.getElementById("f-"+ex.id+"-"+i);
+      if (w){ w.value = (s && s.weight != null) ? s.weight : ""; w.classList.toggle("filled", w.value !== ""); }
+      if (r){ r.value = (s && s.reps != null) ? s.reps : ""; r.classList.toggle("filled", r.value !== ""); }
+      if (f){
+        var active = !!(s && s.failure);
+        f.classList.toggle("active", active);
+        f.setAttribute("aria-pressed", active ? "true" : "false");
+      }
+    }
+    saveLog(ex);
+    updateSummary();
+    updatePrBadge(ex);
+  }
+
+  function estimated1Rm(weight, reps){ return weight * (1 + reps/30); }
+
+  function exerciseSessions(exerciseId){
+    var out = [];
+    Object.keys(state.logs).forEach(function(k){
+      var parts = k.split("__");
+      var date = parts[0], exId = parts.slice(1).join("__");
+      if (exId !== exerciseId) return;
+      var sets = (state.logs[k].sets) || [];
+      var topWeight = null, bestE1rm = null;
+      sets.forEach(function(s){
+        if (!s || s.weight == null || s.reps == null) return;
+        if (topWeight == null || s.weight > topWeight) topWeight = s.weight;
+        var e1 = estimated1Rm(s.weight, s.reps);
+        if (bestE1rm == null || e1 > bestE1rm) bestE1rm = e1;
+      });
+      if (topWeight != null) out.push({ date: date, topWeight: topWeight, bestE1rm: bestE1rm });
+    });
+    out.sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+    return out;
+  }
+
+  function bestE1rmBefore(exerciseId, beforeDate){
+    var sessions = exerciseSessions(exerciseId).filter(function(s){ return s.date < beforeDate; });
+    if (!sessions.length) return null;
+    return Math.max.apply(null, sessions.map(function(s){ return s.bestE1rm; }));
+  }
+
+  function updatePrBadge(ex){
+    var badge = document.getElementById("pr-" + ex.id);
+    if (!badge) return;
+    var baseline = bestE1rmBefore(ex.id, selectedDate);
+    if (baseline == null){ badge.style.display = "none"; return; }
+    var maxToday = null;
+    for (var i=0;i<ex.sets;i++){
+      var w = document.getElementById("w-"+ex.id+"-"+i);
+      var r = document.getElementById("r-"+ex.id+"-"+i);
+      if (!w || !r || w.value.trim() === "" || r.value.trim() === "") continue;
+      var wv = parseFloat(w.value), rv = parseFloat(r.value);
+      if (isNaN(wv) || isNaN(rv)) continue;
+      var e1 = estimated1Rm(wv, rv);
+      if (maxToday == null || e1 > maxToday) maxToday = e1;
+    }
+    badge.style.display = (maxToday != null && maxToday > baseline) ? "inline" : "none";
+  }
+
+  function fmtShortDate(dateStr){
+    var d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString(undefined, { month:"short", day:"numeric" });
+  }
+
+  var chartBackdrop = document.getElementById("chartBackdrop");
+  var chartTitle = document.getElementById("chartTitle");
+  var chartBody = document.getElementById("chartBody");
+  document.getElementById("chartClose").addEventListener("click", function(){ chartBackdrop.classList.remove("show"); });
+
+  function openChart(ex){
+    chartTitle.textContent = ex.name + " — Top Set Weight";
+    chartBody.innerHTML = buildChartSvg(exerciseSessions(ex.id));
+    chartBackdrop.classList.add("show");
+  }
+
+  function buildChartSvg(sessions){
+    if (!sessions.length){
+      return '<div class="chart-empty">No history yet — log a session to start tracking progress.</div>';
+    }
+    if (sessions.length === 1){
+      return '<div class="chart-empty">One session so far: <b>'+sessions[0].topWeight+' kg</b> on '+fmtShortDate(sessions[0].date)+'. Log another to see a trend.</div>';
+    }
+    var W = 300, H = 150, padL = 30, padR = 12, padT = 14, padB = 22;
+    var weights = sessions.map(function(s){ return s.topWeight; });
+    var minW = Math.min.apply(null, weights), maxW = Math.max.apply(null, weights);
+    if (minW === maxW){ minW -= 5; maxW += 5; }
+    var range = maxW - minW;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
+    function xFor(i){ return padL + (i/(sessions.length-1))*innerW; }
+    function yFor(v){ return padT + innerH - ((v-minW)/range)*innerH; }
+
+    var points = sessions.map(function(s,i){ return xFor(i)+","+yFor(s.topWeight); }).join(" ");
+    var dots = sessions.map(function(s,i){
+      return '<circle class="chart-dot" cx="'+xFor(i)+'" cy="'+yFor(s.topWeight)+'" r="3.5"><title>'+escapeHtml(fmtShortDate(s.date))+': '+s.topWeight+'kg</title></circle>';
+    }).join("");
+
+    return ''+
+      '<svg class="chart-svg" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+
+        '<line class="chart-axis" x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(H-padB)+'"/>'+
+        '<line class="chart-axis" x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'"/>'+
+        '<text class="chart-label" x="2" y="'+(padT+4)+'">'+Math.round(maxW)+'</text>'+
+        '<text class="chart-label" x="2" y="'+(H-padB+4)+'">'+Math.round(minW)+'</text>'+
+        '<polyline class="chart-line" points="'+points+'"/>'+
+        dots+
+        '<text class="chart-label" x="'+padL+'" y="'+(H-4)+'">'+escapeHtml(fmtShortDate(sessions[0].date))+'</text>'+
+        '<text class="chart-label" x="'+(W-padR)+'" y="'+(H-4)+'" text-anchor="end">'+escapeHtml(fmtShortDate(sessions[sessions.length-1].date))+'</text>'+
+      '</svg>';
   }
 
   function swapExercises(day, i, j){
