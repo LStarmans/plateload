@@ -280,6 +280,12 @@
     align-items:flex-start;
     gap:8px;
   }
+  .ex-head.editing{
+    flex-direction:column;
+    align-items:stretch;
+    gap:8px;
+  }
+  .ex-controls-row{display:flex;justify-content:flex-end;gap:8px;}
   .ex-name{
     font-family:"Barlow Condensed",sans-serif;
     font-weight:600;
@@ -387,9 +393,7 @@
   .edit-row input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .reps-input{width:76px !important;flex:0 0 auto !important;text-align:center;font-family:"IBM Plex Mono",monospace !important;}
   .name-edit-input{
-    flex:1;
-    min-width:0;
-    width:auto;
+    width:100%;
     min-height:42px;
     border-radius:8px;
     border:1px solid var(--border);
@@ -439,6 +443,37 @@
   .modal h3{font-family:"Barlow Condensed",sans-serif;font-size:18px;margin:0 0 8px 0;}
   .modal p{font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px 0;}
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+  .cal-modal{max-width:340px;}
+  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .cal-month-label{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17px;}
+  .cal-dow-row,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal-dow-row{margin-bottom:6px;}
+  .cal-dow{font-size:10px;text-align:center;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;}
+  .cal-day{
+    aspect-ratio:1;
+    border-radius:8px;
+    border:1px solid transparent;
+    background:var(--surface-2);
+    color:var(--text);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    font-family:"IBM Plex Mono",monospace;
+    font-size:13px;
+    cursor:pointer;
+    padding:0;
+  }
+  .cal-day.empty{visibility:hidden;cursor:default;}
+  .cal-day.has-log{background:var(--accent-soft);}
+  .cal-day.today{border-color:var(--accent);}
+  .cal-day.selected{background:var(--accent);color:var(--surface);}
+  .cal-day .cal-dot{width:4px;height:4px;border-radius:50%;background:var(--accent);}
+  .cal-day.selected .cal-dot{background:var(--surface);}
+  .date-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:8px;}
+  .date-row .today{padding-top:0;}
+
 </style>
 </head>
 <body>
@@ -453,7 +488,13 @@
       <button class="icon-btn" id="editToggle">Edit</button>
     </div>
   </div>
-  <div class="today" id="todayLabel">—</div>
+  <div class="date-row">
+    <div class="today" id="todayLabel">—</div>
+    <div class="head-actions">
+      <button class="icon-btn" id="todayJumpBtn" style="display:none;">Today</button>
+      <button class="icon-btn" id="historyBtn">History</button>
+    </div>
+  </div>
   <div class="data-note">Saved on this device only. <button id="dataNoteExport">Export a backup</button> to move it or keep it safe.</div>
   <div class="summary-row">
     <div class="summary-item"><span class="summary-value" id="statSets">0 / 0</span><span class="summary-label">Sets logged</span></div>
@@ -476,6 +517,21 @@
     <div class="modal-actions">
       <button class="btn-line" id="confirmCancel">Cancel</button>
       <button class="btn-line danger" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="calBackdrop">
+  <div class="modal cal-modal">
+    <div class="cal-header">
+      <button class="mini-btn" id="calPrev">‹</button>
+      <div class="cal-month-label" id="calMonthLabel">—</div>
+      <button class="mini-btn" id="calNext">›</button>
+    </div>
+    <div class="cal-dow-row" id="calDowRow"></div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn-line" id="calClose">Close</button>
     </div>
   </div>
 </div>
@@ -571,12 +627,13 @@
     var d = new Date();
     return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
   }
-  function todayDisplay(){
-    var d = new Date();
+  var today = todayStr();
+  var selectedDate = today;
+
+  function fmtDateDisplay(dateStr){
+    var d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString(undefined, { weekday:"long", month:"short", day:"numeric" });
   }
-  var today = todayStr();
-  document.getElementById("todayLabel").textContent = todayDisplay();
 
   function pickDefaultDay(){
     var nowWd = new Date().getDay();
@@ -585,6 +642,24 @@
     }
     return state.days.length ? state.days[0].id : null;
   }
+
+  function pickDayForDate(dateStr){
+    var prefix = dateStr + "__";
+    var loggedExIds = Object.keys(state.logs).filter(function(k){ return k.indexOf(prefix) === 0; })
+      .map(function(k){ return k.slice(prefix.length); });
+    for (var i=0;i<state.days.length;i++){
+      var day = state.days[i];
+      for (var j=0;j<loggedExIds.length;j++){
+        if (exById(day, loggedExIds[j])) return day.id;
+      }
+    }
+    var wd = new Date(dateStr + "T00:00:00").getDay();
+    for (var k=0;k<state.days.length;k++){
+      if ((state.days[k].weekdays||[]).indexOf(wd) !== -1) return state.days[k].id;
+    }
+    return state.days.length ? state.days[0].id : null;
+  }
+
   currentDayId = pickDefaultDay();
 
   var tabsEl = document.getElementById("tabs");
@@ -604,17 +679,28 @@
     return null;
   }
 
-  function logKey(exerciseId){ return today + "__" + exerciseId; }
+  function logKey(exerciseId){ return selectedDate + "__" + exerciseId; }
 
   function lastLogBefore(exerciseId){
     var best = null;
     Object.keys(state.logs).forEach(function(k){
       var parts = k.split("__");
       var date = parts[0], exId = parts.slice(1).join("__");
-      if (exId !== exerciseId || date >= today) return;
+      if (exId !== exerciseId || date >= selectedDate) return;
       if (!best || date > best.date) best = { date: date, entry: state.logs[k] };
     });
     return best ? best.entry : null;
+  }
+
+  function datesWithLogs(){
+    var set = {};
+    Object.keys(state.logs).forEach(function(k){
+      var date = k.split("__")[0];
+      var entry = state.logs[k];
+      var hasData = (entry.sets||[]).some(function(s){ return s && s.weight != null && s.reps != null; });
+      if (hasData) set[date] = true;
+    });
+    return set;
   }
 
   function fmtSetsText(sets){
@@ -767,13 +853,15 @@
       head.className = "ex-head";
 
       if (editMode){
+        head.classList.add("editing");
+
         var nameInput = document.createElement("input");
         nameInput.type = "text"; nameInput.className = "name-edit-input";
         nameInput.value = ex.name;
         nameInput.addEventListener("change", function(){ ex.name = nameInput.value.trim() || "Exercise"; saveState(); });
 
         var controls = document.createElement("div");
-        controls.className = "card-controls";
+        controls.className = "ex-controls-row";
         var up = document.createElement("button"); up.className="mini-btn"; up.textContent="▲"; up.disabled = exIdx===0;
         up.addEventListener("click", function(){ swapExercises(day, exIdx, exIdx-1); });
         var down = document.createElement("button"); down.className="mini-btn"; down.textContent="▼"; down.disabled = exIdx===day.exercises.length-1;
@@ -914,6 +1002,7 @@
   }
 
   function saveLog(ex){
+    var day = dayById(currentDayId);
     var sets = [];
     for (var i=0;i<ex.sets;i++){
       var w = document.getElementById("w-"+ex.id+"-"+i);
@@ -922,7 +1011,15 @@
       var rv = r && r.value.trim() !== "" ? parseInt(r.value, 10) : null;
       sets.push({ weight: (wv!=null && !isNaN(wv)) ? wv : null, reps: (rv!=null && !isNaN(rv)) ? rv : null });
     }
-    state.logs[logKey(ex.id)] = { sets: sets, updatedAt: new Date().toISOString() };
+    state.logs[logKey(ex.id)] = {
+      date: selectedDate,
+      exerciseId: ex.id,
+      exerciseName: ex.name,
+      dayId: day ? day.id : null,
+      dayName: day ? day.name : null,
+      sets: sets,
+      updatedAt: new Date().toISOString()
+    };
     saveState();
     flashSaved(ex.id);
   }
@@ -962,6 +1059,102 @@
     renderDayEditor();
     renderExerciseList();
   }
+
+  var todayLabelEl = document.getElementById("todayLabel");
+  var todayJumpBtn = document.getElementById("todayJumpBtn");
+
+  function renderDateHeader(){
+    var isToday = selectedDate === today;
+    todayLabelEl.textContent = isToday ? ("Today — " + fmtDateDisplay(selectedDate)) : fmtDateDisplay(selectedDate);
+    todayJumpBtn.style.display = isToday ? "none" : "";
+  }
+
+  function goToDate(dateStr){
+    selectedDate = dateStr;
+    currentDayId = pickDayForDate(dateStr);
+    renderDateHeader();
+    renderTabs();
+    renderDayEditor();
+    renderExerciseList();
+  }
+
+  function goToToday(){ goToDate(today); }
+
+  todayJumpBtn.addEventListener("click", goToToday);
+  renderDateHeader();
+
+  // ---------- calendar / history ----------
+  var calBackdrop = document.getElementById("calBackdrop");
+  var calMonthLabel = document.getElementById("calMonthLabel");
+  var calDowRow = document.getElementById("calDowRow");
+  var calGrid = document.getElementById("calGrid");
+  var calViewYear, calViewMonth;
+
+  function openCalendar(){
+    var base = new Date(selectedDate + "T00:00:00");
+    calViewYear = base.getFullYear();
+    calViewMonth = base.getMonth();
+    renderCalendar();
+    calBackdrop.classList.add("show");
+  }
+
+  function renderCalendar(){
+    calMonthLabel.textContent = new Date(calViewYear, calViewMonth, 1).toLocaleDateString(undefined, { month:"long", year:"numeric" });
+
+    calDowRow.innerHTML = "";
+    ["S","M","T","W","T","F","S"].forEach(function(d){
+      var el = document.createElement("div");
+      el.className = "cal-dow";
+      el.textContent = d;
+      calDowRow.appendChild(el);
+    });
+
+    calGrid.innerHTML = "";
+    var firstOfMonth = new Date(calViewYear, calViewMonth, 1);
+    var startOffset = firstOfMonth.getDay();
+    var daysInMonth = new Date(calViewYear, calViewMonth+1, 0).getDate();
+    var logged = datesWithLogs();
+
+    for (var i=0;i<startOffset;i++){
+      var blank = document.createElement("div");
+      blank.className = "cal-day empty";
+      calGrid.appendChild(blank);
+    }
+
+    var _loop = function(dayNum){
+      var dateStr = calViewYear + "-" + pad(calViewMonth+1) + "-" + pad(dayNum);
+      var cell = document.createElement("button");
+      cell.className = "cal-day";
+      if (logged[dateStr]) cell.classList.add("has-log");
+      if (dateStr === today) cell.classList.add("today");
+      if (dateStr === selectedDate) cell.classList.add("selected");
+      var numSpan = document.createElement("span");
+      numSpan.textContent = dayNum;
+      cell.appendChild(numSpan);
+      if (logged[dateStr]){
+        var dot = document.createElement("span");
+        dot.className = "cal-dot";
+        cell.appendChild(dot);
+      }
+      cell.addEventListener("click", function(){
+        goToDate(dateStr);
+        calBackdrop.classList.remove("show");
+      });
+      calGrid.appendChild(cell);
+    };
+    for (var d=1; d<=daysInMonth; d++){ _loop(d); }
+  }
+
+  document.getElementById("historyBtn").addEventListener("click", openCalendar);
+  document.getElementById("calClose").addEventListener("click", function(){ calBackdrop.classList.remove("show"); });
+  document.getElementById("calPrev").addEventListener("click", function(){
+    calViewMonth--; if (calViewMonth<0){ calViewMonth=11; calViewYear--; }
+    renderCalendar();
+  });
+  document.getElementById("calNext").addEventListener("click", function(){
+    calViewMonth++; if (calViewMonth>11){ calViewMonth=0; calViewYear++; }
+    renderCalendar();
+  });
 
   // ---------- delete confirmations ----------
   var confirmBackdrop = document.getElementById("confirmBackdrop");
