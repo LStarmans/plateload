@@ -386,6 +386,22 @@
   }
   .edit-row input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .reps-input{width:76px !important;flex:0 0 auto !important;text-align:center;font-family:"IBM Plex Mono",monospace !important;}
+  .name-edit-input{
+    flex:1;
+    min-width:0;
+    width:auto;
+    min-height:42px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface-2);
+    color:var(--text);
+    font-family:"Barlow Condensed",sans-serif;
+    font-weight:600;
+    font-size:16px;
+    text-align:left;
+    padding:0 10px;
+  }
+  .name-edit-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .stepper{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono",monospace;font-size:14px;}
   .stepper button{
     width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:16px;cursor:pointer;line-height:1;
@@ -752,7 +768,7 @@
 
       if (editMode){
         var nameInput = document.createElement("input");
-        nameInput.type = "text"; nameInput.className = "reps-input"; nameInput.style.cssText="flex:1;width:auto;text-align:left;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;";
+        nameInput.type = "text"; nameInput.className = "name-edit-input";
         nameInput.value = ex.name;
         nameInput.addEventListener("change", function(){ ex.name = nameInput.value.trim() || "Exercise"; saveState(); });
 
