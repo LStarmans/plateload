@@ -125,18 +125,21 @@
     font-variant-numeric:tabular-nums;
     padding-top:8px;
   }
-  .data-note{
-    font-size:11px;
-    color:var(--text-muted);
-    padding-top:2px;
-  }
-  .data-note button{
-    background:none;border:none;color:var(--accent);font-size:11px;padding:0;cursor:pointer;text-decoration:underline;
+  .streak-chip{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-family:"IBM Plex Mono",monospace;
+    font-weight:600;
+    font-size:13px;
+    color:var(--pr);
+    padding:0 2px;
+    white-space:nowrap;
   }
   .summary-row{
     display:flex;
     gap:16px;
-    padding:12px 0 12px 0;
+    padding:0 0 4px 0;
     font-family:"IBM Plex Mono",monospace;
   }
   .summary-item{display:flex;flex-direction:column;gap:2px;}
@@ -236,6 +239,18 @@
     padding:0 10px;
   }
   .field input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .field select{
+    width:100%;
+    min-height:42px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface-2);
+    color:var(--text);
+    font-family:"IBM Plex Sans",sans-serif;
+    font-size:16px;
+    padding:0 10px;
+  }
+  .field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .weekday-row{display:flex;gap:6px;flex-wrap:wrap;}
   .wd-chip{
     padding:6px 10px;
@@ -538,29 +553,12 @@
     border:1px solid var(--border);
     border-radius:10px;
     padding:10px 12px;
-    margin-top:10px;
   }
   .workout-label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);}
   .workout-value{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;}
   #workoutBtn.on{background:var(--danger);border-color:var(--danger);color:#fff;}
-  .run-card{
-    background:var(--surface);
-    border:1px solid var(--border);
-    border-radius:12px;
-    padding:14px;
-    display:flex;
-    flex-direction:column;
-  }
-  .session-summary{
-    font-family:"IBM Plex Mono",monospace;
-    font-size:11.5px;
-    color:var(--text-muted);
-    margin-bottom:10px;
-    padding-bottom:10px;
-    border-bottom:1px dashed var(--border);
-  }
-  .run-label{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16px;margin-bottom:10px;}
-  .run-row{display:flex;gap:12px;flex-wrap:wrap;}
+  .activity-date{font-size:12px;color:var(--text-muted);margin-bottom:12px;font-variant-numeric:tabular-nums;}
+  .run-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;}
   .run-field{flex:1;min-width:120px;}
   .run-time-inputs{display:flex;align-items:center;gap:4px;}
   .run-time-inputs input{width:100%;min-width:0;text-align:center;}
@@ -580,6 +578,32 @@
   }
   .run-field input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
   .run-pace{margin-top:10px;font-size:11.5px;color:var(--text-muted);font-family:"IBM Plex Mono",monospace;}
+  .settings-actions{display:flex;flex-direction:column;gap:8px;margin:6px 0 14px 0;}
+  .settings-note{font-size:12px;color:var(--text-muted);line-height:1.5;margin:0;}
+  .cal-detail{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+  .cal-detail-date{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;margin-bottom:6px;}
+  .accordion{border-bottom:1px solid var(--border);}
+  .accordion:last-child{border-bottom:none;}
+  .accordion-header{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:none;
+    border:none;
+    padding:10px 2px;
+    font-family:"Barlow Condensed",sans-serif;
+    font-weight:600;
+    font-size:15px;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .chevron{color:var(--text-muted);transition:transform 0.2s ease;}
+  .accordion-header.open .chevron{transform:rotate(180deg);}
+  .accordion-body{display:none;padding:0 2px 12px 2px;}
+  .accordion-body.open{display:block;}
+  .acc-info{font-family:"IBM Plex Mono",monospace;font-size:13px;margin-bottom:10px;line-height:1.6;}
+  .acc-empty{font-size:12.5px;color:var(--text-muted);padding-bottom:4px;}
 </style>
 </head>
 <body>
@@ -588,10 +612,10 @@
   <div class="brand-row">
     <div class="brand">Plateload</div>
     <div class="head-actions">
-      <button class="icon-btn" id="exportBtn">Export</button>
-      <button class="icon-btn" id="importBtn">Import</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none;">
+      <div class="streak-chip"><span>🔥</span><span id="statStreak">0</span></div>
+      <button class="icon-btn" id="activityBtn">Activity</button>
       <button class="icon-btn" id="editToggle">Edit</button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
     </div>
   </div>
   <div class="date-row">
@@ -601,12 +625,10 @@
       <button class="icon-btn" id="historyBtn">History</button>
     </div>
   </div>
-  <div class="data-note">Saved on this device only. <button id="dataNoteExport">Export a backup</button> to move it or keep it safe.</div>
-  <div class="summary-row">
-    <div class="summary-item"><span class="summary-value" id="statSets">0 / 0</span><span class="summary-label">Sets logged</span></div>
-    <div class="summary-item"><span class="summary-value" id="statVolume">0</span><span class="summary-label">Volume (kg)</span></div>
-    <div class="summary-item"><span class="summary-value" id="statStreak">0</span><span class="summary-label">Day streak</span></div>
-  </div>
+  <div class="tabs" id="tabs"></div>
+</div>
+
+<main>
   <div class="workout-row">
     <div>
       <div class="workout-label" id="workoutLabel">Workout Timer</div>
@@ -614,34 +636,13 @@
     </div>
     <button class="icon-btn" id="workoutBtn">Start Workout</button>
   </div>
-  <div class="tabs" id="tabs"></div>
-</div>
 
-<main>
-  <div id="dayEditorSlot"></div>
-
-  <div class="run-card">
-    <div class="session-summary" id="sessionSummary" hidden></div>
-    <div class="run-label">Run / Walk</div>
-    <div class="run-row">
-      <div class="run-field">
-        <span class="field-label">Distance (km)</span>
-        <input type="text" inputmode="decimal" id="runKm" placeholder="0.0">
-      </div>
-      <div class="run-field run-time-field">
-        <span class="field-label">Time (hh:mm:ss)</span>
-        <div class="run-time-inputs">
-          <input type="text" inputmode="numeric" id="runHh" placeholder="hh" maxlength="2">
-          <span>:</span>
-          <input type="text" inputmode="numeric" id="runMm" placeholder="mm" maxlength="2">
-          <span>:</span>
-          <input type="text" inputmode="numeric" id="runSs" placeholder="ss" maxlength="2">
-        </div>
-      </div>
-    </div>
-    <div class="run-pace" id="runPace" hidden></div>
+  <div class="summary-row">
+    <div class="summary-item"><span class="summary-value" id="statSets">0 / 0</span><span class="summary-label">Sets logged</span></div>
+    <div class="summary-item"><span class="summary-value" id="statVolume">0</span><span class="summary-label">Volume (kg)</span></div>
   </div>
 
+  <div id="dayEditorSlot"></div>
   <div class="day-title" id="dayTitle"></div>
   <div id="exerciseList"></div>
   <footer class="notes">Rest 60–90s between isolation sets, 2–3 min on heavy compounds. One or two light ramp-up sets before your first working set. Tap <b>Edit</b> to add exercises, change sets/reps, or restructure your days.</footer>
@@ -667,8 +668,72 @@
     </div>
     <div class="cal-dow-row" id="calDowRow"></div>
     <div class="cal-grid" id="calGrid"></div>
+
+    <div class="cal-detail" id="calDetail" hidden>
+      <div class="cal-detail-date" id="calDetailDate">—</div>
+      <div class="accordion">
+        <button class="accordion-header" id="workoutAccHeader"><span>Workout</span><span class="chevron">▾</span></button>
+        <div class="accordion-body" id="workoutAccBody"></div>
+      </div>
+      <div class="accordion">
+        <button class="accordion-header" id="activityAccHeader"><span>Activity</span><span class="chevron">▾</span></button>
+        <div class="accordion-body" id="activityAccBody"></div>
+      </div>
+    </div>
+
     <div class="modal-actions" style="margin-top:14px;">
       <button class="btn-line" id="calClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsBackdrop">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="settings-actions">
+      <button class="btn-line" id="exportBtn">Export backup</button>
+      <button class="btn-line" id="importBtn">Import backup</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none;">
+    </div>
+    <p class="settings-note">Everything here is saved in this browser only — export a backup to move it to another device or keep it safe.</p>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn-line" id="settingsClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="activityBackdrop">
+  <div class="modal">
+    <h3>Activity</h3>
+    <div class="activity-date" id="activityDate">—</div>
+    <div class="field">
+      <span class="field-label">Type</span>
+      <select id="activityType">
+        <option value="run">Run</option>
+        <option value="walk">Walk</option>
+        <option value="swim">Swim</option>
+        <option value="bike">Bike</option>
+      </select>
+    </div>
+    <div class="run-row">
+      <div class="run-field">
+        <span class="field-label">Distance (km)</span>
+        <input type="text" inputmode="decimal" id="runKm" placeholder="0.0">
+      </div>
+      <div class="run-field run-time-field">
+        <span class="field-label">Time (hh:mm:ss)</span>
+        <div class="run-time-inputs">
+          <input type="text" inputmode="numeric" id="runHh" placeholder="hh" maxlength="2">
+          <span>:</span>
+          <input type="text" inputmode="numeric" id="runMm" placeholder="mm" maxlength="2">
+          <span>:</span>
+          <input type="text" inputmode="numeric" id="runSs" placeholder="ss" maxlength="2">
+        </div>
+      </div>
+    </div>
+    <div class="run-pace" id="runPace" hidden></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn-line" id="activityClose">Close</button>
     </div>
   </div>
 </div>
@@ -1446,7 +1511,6 @@
     renderTabs();
     renderDayEditor();
     renderExerciseList();
-    renderRunAndSession();
   }
 
   function goToToday(){ goToDate(today); }
@@ -1513,33 +1577,28 @@
     }
     saveState();
     renderWorkoutRow();
-    renderRunAndSession();
     updateStreak();
   });
 
-  // ---------- run / walk ----------
-  var sessionSummaryEl = document.getElementById("sessionSummary");
+  // ---------- activity (run / walk / swim / bike) ----------
+  var ACTIVITY_LABELS = { run:"Run", walk:"Walk", swim:"Swim", bike:"Bike" };
+  var activityBackdrop = document.getElementById("activityBackdrop");
+  var activityDateEl = document.getElementById("activityDate");
+  var activityTypeSelect = document.getElementById("activityType");
   var runKmInput = document.getElementById("runKm");
   var runHhInput = document.getElementById("runHh");
   var runMmInput = document.getElementById("runMm");
   var runSsInput = document.getElementById("runSs");
   var runPaceEl = document.getElementById("runPace");
 
-  function renderRunAndSession(){
+  function renderActivityFields(){
     var r = state.runs[selectedDate] || {};
+    activityTypeSelect.value = r.type || "run";
     runKmInput.value = r.km != null ? r.km : "";
     runHhInput.value = r.hh ? pad(r.hh) : "";
     runMmInput.value = r.mm ? pad(r.mm) : "";
     runSsInput.value = r.ss ? pad(r.ss) : "";
     updateRunPace();
-
-    var rec = state.sessions[selectedDate];
-    if (rec && rec.durationSec > 0){
-      sessionSummaryEl.hidden = false;
-      sessionSummaryEl.textContent = "Gym session logged: " + fmtDurationShort(rec.durationSec) + (rec.dayName ? " (" + rec.dayName + ")" : "");
-    } else {
-      sessionSummaryEl.hidden = true;
-    }
   }
 
   function updateRunPace(){
@@ -1563,15 +1622,24 @@
     if (!kmValid && hh === 0 && mm === 0 && ss === 0){
       delete state.runs[selectedDate];
     } else {
-      state.runs[selectedDate] = { km: kmValid ? km : null, hh: hh, mm: mm, ss: ss };
+      state.runs[selectedDate] = { type: activityTypeSelect.value, km: kmValid ? km : null, hh: hh, mm: mm, ss: ss };
     }
     saveState();
     updateRunPace();
     updateStreak();
   }
 
-  [runKmInput, runHhInput, runMmInput, runSsInput].forEach(function(el){
+  [activityTypeSelect, runKmInput, runHhInput, runMmInput, runSsInput].forEach(function(el){
     el.addEventListener("change", saveRun);
+  });
+
+  document.getElementById("activityBtn").addEventListener("click", function(){
+    activityDateEl.textContent = "Logging for " + fmtDateDisplay(selectedDate);
+    renderActivityFields();
+    activityBackdrop.classList.add("show");
+  });
+  document.getElementById("activityClose").addEventListener("click", function(){
+    activityBackdrop.classList.remove("show");
   });
 
   // ---------- calendar / history ----------
@@ -1585,6 +1653,7 @@
     var base = new Date(selectedDate + "T00:00:00");
     calViewYear = base.getFullYear();
     calViewMonth = base.getMonth();
+    document.getElementById("calDetail").hidden = true;
     renderCalendar();
     calBackdrop.classList.add("show");
   }
@@ -1629,7 +1698,8 @@
       }
       cell.addEventListener("click", function(){
         goToDate(dateStr);
-        calBackdrop.classList.remove("show");
+        renderCalendar();
+        showCalDetail(dateStr);
       });
       calGrid.appendChild(cell);
     };
@@ -1640,12 +1710,107 @@
   document.getElementById("calClose").addEventListener("click", function(){ calBackdrop.classList.remove("show"); });
   document.getElementById("calPrev").addEventListener("click", function(){
     calViewMonth--; if (calViewMonth<0){ calViewMonth=11; calViewYear--; }
+    calDetail.hidden = true;
     renderCalendar();
   });
   document.getElementById("calNext").addEventListener("click", function(){
     calViewMonth++; if (calViewMonth>11){ calViewMonth=0; calViewYear++; }
+    calDetail.hidden = true;
     renderCalendar();
   });
+
+  // ---------- calendar day detail (view + delete) ----------
+  var calDetail = document.getElementById("calDetail");
+  var calDetailDate = document.getElementById("calDetailDate");
+  var workoutAccHeader = document.getElementById("workoutAccHeader");
+  var workoutAccBody = document.getElementById("workoutAccBody");
+  var activityAccHeader = document.getElementById("activityAccHeader");
+  var activityAccBody = document.getElementById("activityAccBody");
+
+  function toggleAccordion(header, body){
+    var open = body.classList.toggle("open");
+    header.classList.toggle("open", open);
+  }
+  workoutAccHeader.addEventListener("click", function(){ toggleAccordion(workoutAccHeader, workoutAccBody); });
+  activityAccHeader.addEventListener("click", function(){ toggleAccordion(activityAccHeader, activityAccBody); });
+
+  function showCalDetail(dateStr){
+    calDetail.hidden = false;
+    calDetailDate.textContent = fmtDateDisplay(dateStr);
+    workoutAccBody.classList.remove("open"); workoutAccHeader.classList.remove("open");
+    activityAccBody.classList.remove("open"); activityAccHeader.classList.remove("open");
+    renderWorkoutAccordion(dateStr);
+    renderActivityAccordion(dateStr);
+  }
+
+  function renderWorkoutAccordion(dateStr){
+    workoutAccBody.innerHTML = "";
+    var rec = state.sessions[dateStr];
+    if (rec && rec.durationSec > 0){
+      var info = document.createElement("div");
+      info.className = "acc-info";
+      info.textContent = fmtDurationShort(rec.durationSec) + (rec.dayName ? " · " + rec.dayName : "");
+      var delBtn = document.createElement("button");
+      delBtn.className = "btn-line danger";
+      delBtn.textContent = "Delete workout";
+      delBtn.addEventListener("click", function(){
+        openConfirm("Delete this workout?", "This removes the logged " + fmtDurationShort(rec.durationSec) + " session for " + fmtDateDisplay(dateStr) + ".", function(){
+          deleteSessionForDate(dateStr);
+        });
+      });
+      workoutAccBody.appendChild(info);
+      workoutAccBody.appendChild(delBtn);
+    } else {
+      workoutAccBody.innerHTML = '<div class="acc-empty">No workout logged.</div>';
+    }
+  }
+
+  function renderActivityAccordion(dateStr){
+    activityAccBody.innerHTML = "";
+    var r = state.runs[dateStr];
+    if (r && r.km != null && r.km > 0){
+      var totalSec = (r.hh||0)*3600 + (r.mm||0)*60 + (r.ss||0);
+      var timeText = fmtHms(totalSec);
+      var label = ACTIVITY_LABELS[r.type] || "Run";
+      var paceText = "";
+      if (totalSec > 0){
+        var paceSecPerKm = totalSec / r.km;
+        paceText = " · " + Math.floor(paceSecPerKm/60) + ":" + pad(Math.round(paceSecPerKm%60)) + " /km";
+      }
+      var info = document.createElement("div");
+      info.className = "acc-info";
+      info.textContent = label + " · " + r.km + " km · " + timeText + paceText;
+      var delBtn = document.createElement("button");
+      delBtn.className = "btn-line danger";
+      delBtn.textContent = "Delete activity";
+      delBtn.addEventListener("click", function(){
+        openConfirm("Delete this activity?", "This removes the logged " + label.toLowerCase() + " for " + fmtDateDisplay(dateStr) + ".", function(){
+          deleteRunForDate(dateStr);
+        });
+      });
+      activityAccBody.appendChild(info);
+      activityAccBody.appendChild(delBtn);
+    } else {
+      activityAccBody.innerHTML = '<div class="acc-empty">No activity logged.</div>';
+    }
+  }
+
+  function deleteSessionForDate(dateStr){
+    delete state.sessions[dateStr];
+    saveState();
+    if (dateStr === today) renderWorkoutRow();
+    updateStreak();
+    renderCalendar();
+    renderWorkoutAccordion(dateStr);
+  }
+
+  function deleteRunForDate(dateStr){
+    delete state.runs[dateStr];
+    saveState();
+    updateStreak();
+    renderCalendar();
+    renderActivityAccordion(dateStr);
+  }
 
   // ---------- delete confirmations ----------
   var confirmBackdrop = document.getElementById("confirmBackdrop");
@@ -1710,7 +1875,10 @@
     setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
   }
   document.getElementById("exportBtn").addEventListener("click", doExport);
-  document.getElementById("dataNoteExport").addEventListener("click", doExport);
+
+  var settingsBackdrop = document.getElementById("settingsBackdrop");
+  document.getElementById("settingsBtn").addEventListener("click", function(){ settingsBackdrop.classList.add("show"); });
+  document.getElementById("settingsClose").addEventListener("click", function(){ settingsBackdrop.classList.remove("show"); });
 
   var importFile = document.getElementById("importFile");
   document.getElementById("importBtn").addEventListener("click", function(){ importFile.click(); });
@@ -1731,7 +1899,7 @@
           saveState();
           currentDayId = pickDefaultDay();
           renderTabs(); renderDayEditor(); renderExerciseList();
-          renderRunAndSession(); renderWorkoutRow(); updateStreak();
+          renderWorkoutRow(); updateStreak();
         });
       } catch(e){
         openConfirm("Couldn't read that file", "It doesn't look like a Plateload backup (expected JSON with a \"days\" list).", function(){});
@@ -1745,7 +1913,6 @@
   renderTabs();
   renderDayEditor();
   renderExerciseList();
-  renderRunAndSession();
   renderWorkoutRow();
   updateStreak();
 })();
