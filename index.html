@@ -529,6 +529,57 @@
   .chart-axis{stroke:var(--border);stroke-width:1;}
   .chart-label{font-family:"IBM Plex Mono",monospace;font-size:9px;fill:var(--text-muted);}
   .chart-empty{font-size:13px;color:var(--text-muted);line-height:1.5;padding:12px 0;}
+  .workout-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-top:10px;
+  }
+  .workout-label{font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);}
+  .workout-value{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;}
+  #workoutBtn.on{background:var(--danger);border-color:var(--danger);color:#fff;}
+  .run-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+  }
+  .session-summary{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11.5px;
+    color:var(--text-muted);
+    margin-bottom:10px;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--border);
+  }
+  .run-label{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16px;margin-bottom:10px;}
+  .run-row{display:flex;gap:12px;flex-wrap:wrap;}
+  .run-field{flex:1;min-width:120px;}
+  .run-time-inputs{display:flex;align-items:center;gap:4px;}
+  .run-time-inputs input{width:100%;min-width:0;text-align:center;}
+  .run-time-inputs span{color:var(--text-muted);font-family:"IBM Plex Mono",monospace;}
+  .run-field input[type=text]{
+    width:100%;
+    min-height:42px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface-2);
+    color:var(--text);
+    font-family:"IBM Plex Mono",monospace;
+    font-size:16px;
+    text-align:center;
+    padding:0 8px;
+    font-variant-numeric:tabular-nums;
+  }
+  .run-field input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .run-pace{margin-top:10px;font-size:11.5px;color:var(--text-muted);font-family:"IBM Plex Mono",monospace;}
 </style>
 </head>
 <body>
@@ -554,12 +605,43 @@
   <div class="summary-row">
     <div class="summary-item"><span class="summary-value" id="statSets">0 / 0</span><span class="summary-label">Sets logged</span></div>
     <div class="summary-item"><span class="summary-value" id="statVolume">0</span><span class="summary-label">Volume (kg)</span></div>
+    <div class="summary-item"><span class="summary-value" id="statStreak">0</span><span class="summary-label">Day streak</span></div>
+  </div>
+  <div class="workout-row">
+    <div>
+      <div class="workout-label" id="workoutLabel">Workout Timer</div>
+      <div class="workout-value" id="workoutValue">—</div>
+    </div>
+    <button class="icon-btn" id="workoutBtn">Start Workout</button>
   </div>
   <div class="tabs" id="tabs"></div>
 </div>
 
 <main>
   <div id="dayEditorSlot"></div>
+
+  <div class="run-card">
+    <div class="session-summary" id="sessionSummary" hidden></div>
+    <div class="run-label">Run / Walk</div>
+    <div class="run-row">
+      <div class="run-field">
+        <span class="field-label">Distance (km)</span>
+        <input type="text" inputmode="decimal" id="runKm" placeholder="0.0">
+      </div>
+      <div class="run-field run-time-field">
+        <span class="field-label">Time (hh:mm:ss)</span>
+        <div class="run-time-inputs">
+          <input type="text" inputmode="numeric" id="runHh" placeholder="hh" maxlength="2">
+          <span>:</span>
+          <input type="text" inputmode="numeric" id="runMm" placeholder="mm" maxlength="2">
+          <span>:</span>
+          <input type="text" inputmode="numeric" id="runSs" placeholder="ss" maxlength="2">
+        </div>
+      </div>
+    </div>
+    <div class="run-pace" id="runPace" hidden></div>
+  </div>
+
   <div class="day-title" id="dayTitle"></div>
   <div id="exerciseList"></div>
   <footer class="notes">Rest 60–90s between isolation sets, 2–3 min on heavy compounds. One or two light ramp-up sets before your first working set. Tap <b>Edit</b> to add exercises, change sets/reps, or restructure your days.</footer>
@@ -661,7 +743,10 @@
             {id:"lat_rear_superset", name:"Lateral Raise + Rear Delt Fly", sets:3, reps:"15"}
           ]}
       ],
-      logs: {}
+      logs: {},
+      sessions: {},
+      runs: {},
+      activeWorkout: null
     };
   }
 
@@ -672,6 +757,9 @@
       var parsed = JSON.parse(raw);
       if (!parsed || !Array.isArray(parsed.days)) return defaultState();
       if (!parsed.logs) parsed.logs = {};
+      if (!parsed.sessions) parsed.sessions = {};
+      if (!parsed.runs) parsed.runs = {};
+      if (parsed.activeWorkout === undefined) parsed.activeWorkout = null;
       return parsed;
     } catch(e){
       return defaultState();
@@ -732,6 +820,7 @@
   var listEl = document.getElementById("exerciseList");
   var statSetsEl = document.getElementById("statSets");
   var statVolumeEl = document.getElementById("statVolume");
+  var statStreakEl = document.getElementById("statStreak");
   var dayEditorSlot = document.getElementById("dayEditorSlot");
   var editToggle = document.getElementById("editToggle");
 
@@ -766,6 +855,50 @@
       if (hasData) set[date] = true;
     });
     return set;
+  }
+
+  function allActivityDates(){
+    var set = datesWithLogs();
+    Object.keys(state.sessions||{}).forEach(function(d){
+      if (state.sessions[d] && state.sessions[d].durationSec > 0) set[d] = true;
+    });
+    Object.keys(state.runs||{}).forEach(function(d){
+      var r = state.runs[d];
+      if (r && r.km != null && r.km > 0) set[d] = true;
+    });
+    return set;
+  }
+
+  function dateKeyFromDate(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+
+  function computeStreak(){
+    var active = allActivityDates();
+    var cursor = new Date(today + "T00:00:00");
+    if (!active[dateKeyFromDate(cursor)]) cursor.setDate(cursor.getDate() - 1);
+    var streak = 0;
+    while (active[dateKeyFromDate(cursor)]){
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function updateStreak(){
+    statStreakEl.textContent = computeStreak();
+  }
+
+  function fmtHms(totalSeconds){
+    totalSeconds = Math.max(0, Math.round(totalSeconds));
+    var h = Math.floor(totalSeconds/3600);
+    var m = Math.floor((totalSeconds%3600)/60);
+    var s = totalSeconds%60;
+    return h > 0 ? (h+":"+pad(m)+":"+pad(s)) : (m+":"+pad(s));
+  }
+
+  function fmtDurationShort(totalSeconds){
+    var totalMin = Math.round(totalSeconds/60);
+    var h = Math.floor(totalMin/60), m = totalMin%60;
+    return h > 0 ? (h+"h "+m+"m") : (m+"m");
   }
 
   function fmtSetsText(sets){
@@ -1258,6 +1391,7 @@
     };
     saveState();
     flashSaved(ex.id);
+    updateStreak();
   }
 
   function flashSaved(exerciseId){
@@ -1312,12 +1446,133 @@
     renderTabs();
     renderDayEditor();
     renderExerciseList();
+    renderRunAndSession();
   }
 
   function goToToday(){ goToDate(today); }
 
   todayJumpBtn.addEventListener("click", goToToday);
   renderDateHeader();
+
+  // ---------- workout timer (always tied to today) ----------
+  var workoutLabelEl = document.getElementById("workoutLabel");
+  var workoutValueEl = document.getElementById("workoutValue");
+  var workoutBtn = document.getElementById("workoutBtn");
+  var timerInterval = null;
+
+  function startTimerTick(){
+    clearInterval(timerInterval);
+    timerInterval = setInterval(renderWorkoutRow, 1000);
+  }
+  function stopTimerTick(){
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  function renderWorkoutRow(){
+    var active = state.activeWorkout;
+    if (active){
+      var elapsed = (Date.now() - new Date(active.startedAt).getTime()) / 1000;
+      workoutLabelEl.textContent = "Workout in progress";
+      workoutValueEl.textContent = fmtHms(elapsed);
+      workoutBtn.textContent = "Finish";
+      workoutBtn.classList.add("on");
+      if (!timerInterval) startTimerTick();
+    } else {
+      stopTimerTick();
+      workoutBtn.classList.remove("on");
+      workoutBtn.textContent = "Start Workout";
+      var recordedToday = state.sessions[today];
+      if (recordedToday && recordedToday.durationSec > 0){
+        workoutLabelEl.textContent = "Workout logged today";
+        workoutValueEl.textContent = fmtDurationShort(recordedToday.durationSec);
+      } else {
+        workoutLabelEl.textContent = "Workout Timer";
+        workoutValueEl.textContent = "—";
+      }
+    }
+  }
+
+  workoutBtn.addEventListener("click", function(){
+    if (state.activeWorkout){
+      var elapsedSec = (Date.now() - new Date(state.activeWorkout.startedAt).getTime()) / 1000;
+      var rec = state.sessions[today] || { durationSec: 0 };
+      rec.durationSec += elapsedSec;
+      rec.dayId = state.activeWorkout.dayId;
+      rec.dayName = state.activeWorkout.dayName;
+      rec.endedAt = new Date().toISOString();
+      state.sessions[today] = rec;
+      state.activeWorkout = null;
+    } else {
+      var day = dayById(currentDayId);
+      state.activeWorkout = {
+        startedAt: new Date().toISOString(),
+        dayId: currentDayId,
+        dayName: day ? day.name : null
+      };
+    }
+    saveState();
+    renderWorkoutRow();
+    renderRunAndSession();
+    updateStreak();
+  });
+
+  // ---------- run / walk ----------
+  var sessionSummaryEl = document.getElementById("sessionSummary");
+  var runKmInput = document.getElementById("runKm");
+  var runHhInput = document.getElementById("runHh");
+  var runMmInput = document.getElementById("runMm");
+  var runSsInput = document.getElementById("runSs");
+  var runPaceEl = document.getElementById("runPace");
+
+  function renderRunAndSession(){
+    var r = state.runs[selectedDate] || {};
+    runKmInput.value = r.km != null ? r.km : "";
+    runHhInput.value = r.hh ? pad(r.hh) : "";
+    runMmInput.value = r.mm ? pad(r.mm) : "";
+    runSsInput.value = r.ss ? pad(r.ss) : "";
+    updateRunPace();
+
+    var rec = state.sessions[selectedDate];
+    if (rec && rec.durationSec > 0){
+      sessionSummaryEl.hidden = false;
+      sessionSummaryEl.textContent = "Gym session logged: " + fmtDurationShort(rec.durationSec) + (rec.dayName ? " (" + rec.dayName + ")" : "");
+    } else {
+      sessionSummaryEl.hidden = true;
+    }
+  }
+
+  function updateRunPace(){
+    var r = state.runs[selectedDate];
+    if (!r || !r.km || r.km <= 0){ runPaceEl.hidden = true; return; }
+    var totalSec = (r.hh||0)*3600 + (r.mm||0)*60 + (r.ss||0);
+    if (totalSec <= 0){ runPaceEl.hidden = true; return; }
+    var paceSecPerKm = totalSec / r.km;
+    var paceMin = Math.floor(paceSecPerKm/60), paceSec = Math.round(paceSecPerKm%60);
+    runPaceEl.hidden = false;
+    runPaceEl.textContent = "Pace: " + paceMin + ":" + pad(paceSec) + " /km";
+  }
+
+  function saveRun(){
+    var km = runKmInput.value.trim() !== "" ? parseFloat(runKmInput.value) : null;
+    var hh = runHhInput.value.trim() !== "" ? parseInt(runHhInput.value, 10) : 0;
+    var mm = runMmInput.value.trim() !== "" ? parseInt(runMmInput.value, 10) : 0;
+    var ss = runSsInput.value.trim() !== "" ? parseInt(runSsInput.value, 10) : 0;
+    if (isNaN(hh)) hh = 0; if (isNaN(mm)) mm = 0; if (isNaN(ss)) ss = 0;
+    var kmValid = (km != null && !isNaN(km) && km > 0);
+    if (!kmValid && hh === 0 && mm === 0 && ss === 0){
+      delete state.runs[selectedDate];
+    } else {
+      state.runs[selectedDate] = { km: kmValid ? km : null, hh: hh, mm: mm, ss: ss };
+    }
+    saveState();
+    updateRunPace();
+    updateStreak();
+  }
+
+  [runKmInput, runHhInput, runMmInput, runSsInput].forEach(function(el){
+    el.addEventListener("change", saveRun);
+  });
 
   // ---------- calendar / history ----------
   var calBackdrop = document.getElementById("calBackdrop");
@@ -1349,7 +1604,7 @@
     var firstOfMonth = new Date(calViewYear, calViewMonth, 1);
     var startOffset = firstOfMonth.getDay();
     var daysInMonth = new Date(calViewYear, calViewMonth+1, 0).getDate();
-    var logged = datesWithLogs();
+    var logged = allActivityDates();
 
     for (var i=0;i<startOffset;i++){
       var blank = document.createElement("div");
@@ -1470,9 +1725,13 @@
         openConfirm("Replace all data?", "Importing \"" + file.name + "\" will overwrite every day, exercise and logged set currently on this device.", function(){
           state = parsed;
           if (!state.logs) state.logs = {};
+          if (!state.sessions) state.sessions = {};
+          if (!state.runs) state.runs = {};
+          if (state.activeWorkout === undefined) state.activeWorkout = null;
           saveState();
           currentDayId = pickDefaultDay();
           renderTabs(); renderDayEditor(); renderExerciseList();
+          renderRunAndSession(); renderWorkoutRow(); updateStreak();
         });
       } catch(e){
         openConfirm("Couldn't read that file", "It doesn't look like a Plateload backup (expected JSON with a \"days\" list).", function(){});
@@ -1486,6 +1745,9 @@
   renderTabs();
   renderDayEditor();
   renderExerciseList();
+  renderRunAndSession();
+  renderWorkoutRow();
+  updateStreak();
 })();
 </script>
 </body>
