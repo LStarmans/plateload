@@ -608,6 +608,8 @@
 </head>
 <body>
 
+<datalist id="exerciseNamesList"></datalist>
+
 <div class="head">
   <div class="brand-row">
     <div class="brand">Plateload</div>
@@ -759,6 +761,51 @@
     return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   }
 
+  // Deriving an exercise's id from its (normalized) name means two entries
+  // with the same name — even on different days — automatically share one
+  // identity, so their logs, "last time", PR tracking and notes all carry
+  // over instead of living in separate silos.
+  function slugifyExerciseName(name){
+    var s = (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return s || "exercise";
+  }
+
+  var CURATED_EXERCISES = [
+    "Barbell Bench Press","Incline Barbell Bench Press","Decline Barbell Bench Press",
+    "Dumbbell Bench Press","Incline Dumbbell Press","Decline Dumbbell Press",
+    "Dumbbell Fly","Cable Fly","Pec Deck","Push-Up","Dips","Smith Machine Bench Press",
+    "Deadlift","Romanian Deadlift","Sumo Deadlift","Rack Pull",
+    "Pull-Up","Chin-Up","Lat Pulldown","Wide-Grip Lat Pulldown","Close-Grip Lat Pulldown",
+    "Barbell Row","Pendlay Row","T-Bar Row","Seated Cable Row","Chest-Supported Row",
+    "Single-Arm Dumbbell Row","Face Pull","Straight-Arm Pulldown",
+    "Barbell Shrug","Dumbbell Shrug",
+    "Overhead Barbell Press","Seated Dumbbell Shoulder Press","Arnold Press",
+    "Lateral Raise","Cable Lateral Raise","Front Raise","Rear Delt Fly",
+    "Upright Row","Military Press","Push Press",
+    "Barbell Curl","EZ Bar Curl","Dumbbell Curl","Hammer Curl","Incline Dumbbell Curl",
+    "Preacher Curl","Concentration Curl","Cable Curl","Spider Curl",
+    "Close-Grip Bench Press","Triceps Rope Pushdown","Overhead Cable Triceps Extension",
+    "Skull Crushers","Dumbbell Overhead Extension","Triceps Kickback","Diamond Push-Up",
+    "Back Squat","Front Squat","Leg Press","Bulgarian Split Squat","Walking Lunge",
+    "Leg Extension","Leg Curl","Hip Thrust","Glute Bridge","Goblet Squat","Hack Squat","Step-Up",
+    "Standing Calf Raise","Seated Calf Raise",
+    "Plank","Hanging Leg Raise","Cable Crunch","Russian Twist","Ab Wheel Rollout",
+    "Sit-Up","Bicycle Crunch","Weighted Crunch"
+  ];
+
+  var exerciseNamesDatalist = document.getElementById("exerciseNamesList");
+  function refreshExerciseDatalist(){
+    var names = {};
+    CURATED_EXERCISES.forEach(function(n){ names[n] = true; });
+    state.days.forEach(function(d){
+      (d.exercises||[]).forEach(function(ex){ if (ex.name) names[ex.name] = true; });
+    });
+    var sorted = Object.keys(names).sort(function(a,b){ return a.localeCompare(b); });
+    exerciseNamesDatalist.innerHTML = sorted.map(function(n){
+      return '<option value="' + escapeHtml(n) + '"></option>';
+    }).join("");
+  }
+
   function defaultState(){
     return {
       days: [
@@ -811,6 +858,7 @@
       logs: {},
       sessions: {},
       runs: {},
+      exerciseNotes: {},
       activeWorkout: null
     };
   }
@@ -824,7 +872,18 @@
       if (!parsed.logs) parsed.logs = {};
       if (!parsed.sessions) parsed.sessions = {};
       if (!parsed.runs) parsed.runs = {};
+      if (!parsed.exerciseNotes) parsed.exerciseNotes = {};
       if (parsed.activeWorkout === undefined) parsed.activeWorkout = null;
+      // migrate notes that used to live on each exercise entry into the
+      // shared, id-keyed store so they carry over across days too.
+      parsed.days.forEach(function(day){
+        (day.exercises||[]).forEach(function(ex){
+          if (ex.notes && !parsed.exerciseNotes[ex.id]){
+            parsed.exerciseNotes[ex.id] = ex.notes;
+          }
+          delete ex.notes;
+        });
+      });
       return parsed;
     } catch(e){
       return defaultState();
@@ -837,6 +896,7 @@
   }
 
   var state = loadState();
+  saveState(); // persist any one-time migrations (e.g. legacy per-exercise notes) right away
   var editMode = false;
   var currentDayId = null;
 
@@ -1121,7 +1181,15 @@
         var nameInput = document.createElement("input");
         nameInput.type = "text"; nameInput.className = "name-edit-input";
         nameInput.value = ex.name;
-        nameInput.addEventListener("change", function(){ ex.name = nameInput.value.trim() || "Exercise"; saveState(); });
+        nameInput.setAttribute("list", "exerciseNamesList");
+        nameInput.autocomplete = "off";
+        nameInput.addEventListener("change", function(){
+          ex.name = nameInput.value.trim() || "Exercise";
+          ex.id = slugifyExerciseName(ex.name);
+          saveState();
+          refreshExerciseDatalist();
+          renderExerciseList();
+        });
 
         var controls = document.createElement("div");
         controls.className = "ex-controls-row";
@@ -1213,8 +1281,12 @@
         notesWrap.innerHTML = '<span class="ex-notes-label">Notes</span>';
         var notesArea = document.createElement("textarea");
         notesArea.placeholder = "Form cues, equipment setting, how it felt…";
-        notesArea.value = ex.notes || "";
-        notesArea.addEventListener("change", function(){ ex.notes = notesArea.value; saveState(); });
+        notesArea.value = state.exerciseNotes[ex.id] || "";
+        notesArea.addEventListener("change", function(){
+          if (notesArea.value.trim() === "") delete state.exerciseNotes[ex.id];
+          else state.exerciseNotes[ex.id] = notesArea.value;
+          saveState();
+        });
         notesWrap.appendChild(notesArea);
         card.appendChild(notesWrap);
 
@@ -1859,6 +1931,7 @@
     editMode = !editMode;
     editToggle.classList.toggle("on", editMode);
     editToggle.textContent = editMode ? "Done" : "Edit";
+    if (editMode) refreshExerciseDatalist();
     renderTabs(); renderDayEditor(); renderExerciseList();
   });
 
@@ -1895,9 +1968,11 @@
           if (!state.logs) state.logs = {};
           if (!state.sessions) state.sessions = {};
           if (!state.runs) state.runs = {};
+          if (!state.exerciseNotes) state.exerciseNotes = {};
           if (state.activeWorkout === undefined) state.activeWorkout = null;
           saveState();
           currentDayId = pickDefaultDay();
+          refreshExerciseDatalist();
           renderTabs(); renderDayEditor(); renderExerciseList();
           renderWorkoutRow(); updateStreak();
         });
@@ -1910,6 +1985,7 @@
   });
 
   // ---------- boot ----------
+  refreshExerciseDatalist();
   renderTabs();
   renderDayEditor();
   renderExerciseList();
