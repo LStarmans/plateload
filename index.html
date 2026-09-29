@@ -604,11 +604,40 @@
   .accordion-body.open{display:block;}
   .acc-info{font-family:"IBM Plex Mono",monospace;font-size:13px;margin-bottom:10px;line-height:1.6;}
   .acc-empty{font-size:12.5px;color:var(--text-muted);padding-bottom:4px;}
+  .name-field-wrap{position:relative;}
+  .autocomplete-list{
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    right:0;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:0 6px 16px rgba(0,0,0,0.18);
+    max-height:230px;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    z-index:15;
+  }
+  .autocomplete-item{
+    display:block;
+    width:100%;
+    text-align:left;
+    min-height:42px;
+    padding:10px 12px;
+    background:none;
+    border:none;
+    border-bottom:1px solid var(--border);
+    color:var(--text);
+    font-family:"IBM Plex Sans",sans-serif;
+    font-size:15px;
+    cursor:pointer;
+  }
+  .autocomplete-item:last-child{border-bottom:none;}
+  .autocomplete-item:active{background:var(--accent-soft);}
 </style>
 </head>
 <body>
-
-<datalist id="exerciseNamesList"></datalist>
 
 <div class="head">
   <div class="brand-row">
@@ -793,17 +822,13 @@
     "Sit-Up","Bicycle Crunch","Weighted Crunch"
   ];
 
-  var exerciseNamesDatalist = document.getElementById("exerciseNamesList");
-  function refreshExerciseDatalist(){
+  function getKnownExerciseNames(){
     var names = {};
     CURATED_EXERCISES.forEach(function(n){ names[n] = true; });
     state.days.forEach(function(d){
       (d.exercises||[]).forEach(function(ex){ if (ex.name) names[ex.name] = true; });
     });
-    var sorted = Object.keys(names).sort(function(a,b){ return a.localeCompare(b); });
-    exerciseNamesDatalist.innerHTML = sorted.map(function(n){
-      return '<option value="' + escapeHtml(n) + '"></option>';
-    }).join("");
+    return Object.keys(names);
   }
 
   function defaultState(){
@@ -1178,18 +1203,69 @@
       if (editMode){
         head.classList.add("editing");
 
+        var nameFieldWrap = document.createElement("div");
+        nameFieldWrap.className = "name-field-wrap";
+
         var nameInput = document.createElement("input");
         nameInput.type = "text"; nameInput.className = "name-edit-input";
         nameInput.value = ex.name;
-        nameInput.setAttribute("list", "exerciseNamesList");
         nameInput.autocomplete = "off";
-        nameInput.addEventListener("change", function(){
-          ex.name = nameInput.value.trim() || "Exercise";
+        nameInput.setAttribute("autocapitalize", "words");
+        nameInput.setAttribute("autocorrect", "off");
+        nameInput.setAttribute("spellcheck", "false");
+
+        var suggestList = document.createElement("div");
+        suggestList.className = "autocomplete-list";
+        suggestList.hidden = true;
+
+        function commitNameChange(newName){
+          var trimmed = newName.trim() || "Exercise";
+          suggestList.hidden = true;
+          if (trimmed === ex.name) return;
+          ex.name = trimmed;
           ex.id = slugifyExerciseName(ex.name);
           saveState();
-          refreshExerciseDatalist();
           renderExerciseList();
+        }
+
+        function renderSuggestions(){
+          var q = nameInput.value.trim().toLowerCase();
+          suggestList.innerHTML = "";
+          if (!q){ suggestList.hidden = true; return; }
+          var matches = getKnownExerciseNames().filter(function(n){
+            return n.toLowerCase().indexOf(q) !== -1;
+          });
+          matches.sort(function(a,b){
+            var aStarts = a.toLowerCase().indexOf(q) === 0;
+            var bStarts = b.toLowerCase().indexOf(q) === 0;
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return a.localeCompare(b);
+          });
+          matches = matches.slice(0, 8);
+          if (!matches.length){ suggestList.hidden = true; return; }
+          matches.forEach(function(n){
+            var item = document.createElement("button");
+            item.type = "button";
+            item.className = "autocomplete-item";
+            item.textContent = n;
+            item.addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+            item.addEventListener("click", function(){ commitNameChange(n); });
+            suggestList.appendChild(item);
+          });
+          suggestList.hidden = false;
+        }
+
+        nameInput.addEventListener("input", renderSuggestions);
+        nameInput.addEventListener("focus", renderSuggestions);
+        nameInput.addEventListener("blur", function(){
+          setTimeout(function(){ commitNameChange(nameInput.value); }, 120);
         });
+        nameInput.addEventListener("keydown", function(ev){
+          if (ev.key === "Enter"){ ev.preventDefault(); nameInput.blur(); }
+        });
+
+        nameFieldWrap.appendChild(nameInput);
+        nameFieldWrap.appendChild(suggestList);
 
         var controls = document.createElement("div");
         controls.className = "ex-controls-row";
@@ -1201,7 +1277,7 @@
         del.addEventListener("click", function(){ confirmDeleteExercise(day, ex.id); });
         controls.appendChild(up); controls.appendChild(down); controls.appendChild(del);
 
-        head.appendChild(nameInput);
+        head.appendChild(nameFieldWrap);
         head.appendChild(controls);
         card.appendChild(head);
 
@@ -1931,7 +2007,6 @@
     editMode = !editMode;
     editToggle.classList.toggle("on", editMode);
     editToggle.textContent = editMode ? "Done" : "Edit";
-    if (editMode) refreshExerciseDatalist();
     renderTabs(); renderDayEditor(); renderExerciseList();
   });
 
@@ -1972,7 +2047,6 @@
           if (state.activeWorkout === undefined) state.activeWorkout = null;
           saveState();
           currentDayId = pickDefaultDay();
-          refreshExerciseDatalist();
           renderTabs(); renderDayEditor(); renderExerciseList();
           renderWorkoutRow(); updateStreak();
         });
@@ -1985,7 +2059,6 @@
   });
 
   // ---------- boot ----------
-  refreshExerciseDatalist();
   renderTabs();
   renderDayEditor();
   renderExerciseList();
